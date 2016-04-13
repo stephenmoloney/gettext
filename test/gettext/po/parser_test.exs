@@ -132,7 +132,7 @@ defmodule Gettext.PO.ParserTest do
       {:comment, 2, "# Comment"},
       {:msgstr, 3}, {:str, 3, "bar"},
     ])
-    assert {:error, 2, _} = parsed
+    assert {:error, 3, _} = parsed
 
     parsed = Parser.parse([
       {:msgid, 1}, {:str, 1, "foo"},
@@ -140,7 +140,7 @@ defmodule Gettext.PO.ParserTest do
       {:comment, 3, "# Comment"},
       {:msgstr, 4}, {:plural_form, 4, 0}, {:str, 4, "bar"},
     ])
-    assert {:error, 3, _} = parsed
+    assert {:error, 4, _} = parsed
   end
 
   test "files with just comments are ok (the comments are discarded)" do
@@ -283,5 +283,22 @@ defmodule Gettext.PO.ParserTest do
       ["Language: en_US\n"],
       []
     } = parsed
+  end
+
+  test "a msgid without a msgstr raises a nice error message" do
+    parsed = Parser.parse([
+      {:msgid, 1}, {:str, 1, "foo"},
+      {:comment, 2, "# no msgstr"},
+    ])
+
+    assert {:error, 1, "missing msgstr"} = parsed
+
+    parsed = Parser.parse([
+      {:msgid, 1}, {:str, 1, "foo"},
+      {:msgid_plural, 2}, {:str, 2, "foos"},
+      {:comment, 3, "# no msgstr"},
+    ])
+
+    assert {:error, 2, "missing msgstr"} = parsed
   end
 end

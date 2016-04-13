@@ -30,6 +30,13 @@ translation ->
     msgstr         => plural_forms_map_from_list('$5'),
     po_source_line => extract_line('$1')
   }}.
+% A bunch of malformed translations.
+translation ->
+  msgid strings :
+    {malformed_translation, extract_line('$1'), <<"missing msgstr">>}.
+translation ->
+  msgid strings msgid_plural strings :
+    {malformed_translation, extract_line('$3'), <<"missing msgstr">>}.
 
 pluralizations ->
   pluralization : ['$1'].
@@ -65,5 +72,8 @@ plural_forms_map_from_list(Pluralizations) ->
 extract_plural_form({{plural_form, _Line, PluralForm}, String}) ->
   {PluralForm, String}.
 
-add_comments_to_translation({TranslationType, Translation}, Comments) ->
-  {TranslationType, maps:put(comments, Comments, Translation)}.
+add_comments_to_translation({Type, Translation}, Comments)
+  when Type == translation; Type == plural_translation ->
+  {Type, maps:put(comments, Comments, Translation)};
+add_comments_to_translation({malformed_translation, _, _} = Translation, _Comments) ->
+  Translation.

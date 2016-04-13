@@ -19,14 +19,28 @@ defmodule Gettext.PO.Parser do
   end
 
   defp do_parse(translations) do
-    translations = Enum.map(translations, &to_struct/1)
-
-    case check_for_duplicates(translations) do
+    case translations_to_structs(translations) do
+      {:ok, translations} ->
+        case check_for_duplicates(translations) do
+          {:error, _line, _reason} = error ->
+            error
+          :ok ->
+            {top_comments, headers, translations} = extract_top_comments_and_headers(translations)
+            {:ok, top_comments, headers, translations}
+        end
       {:error, _line, _reason} = error ->
+        # This error is returned in case there are any malformed translations.
         error
-      :ok ->
-        {top_comments, headers, translations} = extract_top_comments_and_headers(translations)
-        {:ok, top_comments, headers, translations}
+    end
+  end
+
+  defp translations_to_structs(translations) do
+    # to_struct/1 is supposed to throw {:error, line, reason} if it finds any
+    # malformed translation.
+    try do
+      {:ok, Enum.map(translations, &to_struct/1)}
+    catch
+      {:error, _line, _reason} = error -> error
     end
   end
 
@@ -34,6 +48,8 @@ defmodule Gettext.PO.Parser do
     do: struct(Translation, translation) |> extract_references() |> extract_flags()
   defp to_struct({:plural_translation, translation}),
     do: struct(PluralTranslation, translation) |> extract_references() |> extract_flags()
+  defp to_struct({:malformed_translation, line, reason}),
+    do: throw({:error, line, reason})
 
   defp parse_error({:error, {line, _module, reason}}) do
     {:error, line, IO.chardata_to_string(reason)}
