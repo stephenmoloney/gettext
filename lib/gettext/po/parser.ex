@@ -11,29 +11,89 @@ defmodule Gettext.PO.Parser do
     {:ok, [binary], [Gettext.PO.translation]} | Gettext.PO.parse_error
   def parse(tokens) do
     case :gettext_po_parser.parse(tokens) do
-      {:ok, translations} ->
-        do_parse(translations)
+      {:ok, elements} ->
+        do_parse(elements)
       {:error, _reason} = error ->
         parse_error(error)
     end
   end
 
-  defp do_parse(translations) do
-    translations = Enum.map(translations, &to_struct/1)
-
-    case check_for_duplicates(translations) do
-      {:error, _line, _reason} = error ->
+  defp do_parse(elements) do
+    case parse_elements(elements, []) do
+      {:ok, translations} ->
+        case check_for_duplicates(translations) do
+          {:error, _line, _reason} = error ->
+            error
+          :ok ->
+            {top_comments, headers, translations} =
+              extract_top_comments_and_headers(translations)
+            {:ok, top_comments, headers, translations}
+        end
+      {:error, line, reason} = error ->
         error
-      :ok ->
-        {top_comments, headers, translations} = extract_top_comments_and_headers(translations)
-        {:ok, top_comments, headers, translations}
     end
   end
 
-  defp to_struct({:translation, translation}),
-    do: struct(Translation, translation) |> extract_references() |> extract_flags()
-  defp to_struct({:plural_translation, translation}),
-    do: struct(PluralTranslation, translation) |> extract_references() |> extract_flags()
+  defp parse_elements([{:comments, _comments}], acc) do
+    {:ok, Enum.reverse(acc)}
+  end
+
+  defp parse_elements([{:comments, _} = comments, {:msgid, _, _} = msgid, {:msgstr, _, _} = msgstr | rest], acc) do
+    translation = build_translation(comments, msgid, msgstr)
+    parse_elements(rest, [translation | acc])
+  end
+
+  defp parse_elements([{:comments, _} = comments, {:msgid, _, _} = msgid, {:msgid_plural, _, _} = msgid_plural | rest]) do
+    case take_pluralizations(rest) do
+      {:ok, pluralizations, rest} ->
+        translation = build_plural_translation(comments, msgid, msgid_plural, pluralizations)
+        parse_elements(rest, [build_translation(...) | acc])
+      {:error, _line, _reason} = error ->
+        error
+    end
+  end
+
+  defp parse_elements([{:msgid, line, _}, _]) do
+    {:error, line, "missing msgstr"}
+  end
+
+  defp parse_elements([{:msgid, line, _}, {:msgid_plural, _, _} | _]) do
+    {:error, line, "missing msgstrs"}
+  end
+
+  defp build_translation({:comments, comments}, {:msgid, line, msgid}, {:msgstr, _, msgstr}) do
+    struct = %Translation{
+      msgid: msgid,
+      msgstr: msgstr,
+      comments: comments,
+      po_source_line: line,
+    }
+
+    struct |> extract_references() |> extract_flags()
+  end
+
+  defp build_plural_translation({:comments, comments}, {:msgid, line, msgid}, {:msgid_plural, _, msgid_plural}, pluralizations) do
+    msgstr = Enum.into(pluralizations, %{}, fn({:pluralization, _, form}) -> form end)
+
+    struct = %PluralTranslation{
+      msgid: msgid,
+      msgid_plural: msgid_plural,
+      msgstr: msgstr,
+      comments: comments,
+      po_source_line: line,
+    }
+
+    struct |> extract_references() |> extract_flags()
+  end
+
+  defp take_pluralizations(elements) do
+    case Enum.split_while(elements, &match?({:pluralization, _, _}, &1)) do
+      {[], _} ->
+        {:error, "expected pluralizations"}
+      {pluralizations, rest} ->
+        {:ok, pluralizations, rest}
+    end
+  end
 
   defp parse_error({:error, {line, _module, reason}}) do
     {:error, line, IO.chardata_to_string(reason)}
