@@ -10,6 +10,7 @@ defmodule Gettext.Compiler do
 
   require Logger
 
+  @default_release_path "_build/prod"
   @default_priv "priv/gettext"
   @po_wildcard "*/LC_MESSAGES/*.po"
 
@@ -34,7 +35,14 @@ defmodule Gettext.Compiler do
     priv = Keyword.get(opts, :priv, @default_priv)
     plural_mod = Keyword.get(opts, :plural_forms, Gettext.Plural)
 
-    translations_dir = Application.app_dir(otp_app, priv)
+    # translations_dir = Application.app_dir(otp_app, priv)
+    translations_dir =
+      try do
+        Application.app_dir(otp_app, priv)
+      rescue
+        _e in ArgumentError ->
+          Path.join(@default_release_path, "lib/#{Atom.to_string(otp_app)}")
+      end
     external_file = String.replace(Path.join(".compile", priv), "/", "_")
     known_locales = known_locales(translations_dir)
 
@@ -48,7 +56,19 @@ defmodule Gettext.Compiler do
 
       # The manifest lives in the root of the priv
       # directory that contains .po/.pot files.
-      @external_resource unquote(Application.app_dir(otp_app, external_file))
+      @external_resource unquote(
+        try do
+          Application.app_dir(otp_app, external_file)
+        rescue
+          _e in ArgumentError ->
+            if is_list(external_file) do
+              Path.join([@default_release_path, external_file])
+            else
+              Path.join(@default_release_path, "#{external_file}")
+            end
+        end
+      )
+      # @external_resource unquote(Application.app_dir(otp_app, external_file))
 
       if Gettext.Extractor.extracting?() do
         Gettext.ExtractorAgent.add_backend(__MODULE__)
